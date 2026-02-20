@@ -39,31 +39,39 @@ jobs:
           docker build -t sbkottisa-java-app:${IMAGE_TAG} .
 
       # PR scans (policy / gating)
-      - name: Endor Labs PR scan (SCA + container)
+      - name: Endor Labs PR scan (SCA + container + secrets)
         if: github.event_name == 'pull_request'
         uses: endorlabs/github-action@v1
         with:
           namespace: ${{ env.ENDOR_NAMESPACE }}
-          # SCA
+
+          # SCA + secrets
           scan_dependencies: true
+          scan_secrets: true
+
           # Container
           scan_container: true
           image: sbkottisa-java-app:${{ github.sha }}
-          project_name: sbkottisa-java-app
+          # no project_name so it ties to the repo project
+
           # PR behaviour
           pr: true
           enable_pr_comments: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Main-branch monitoring scan (shows up on dashboards)
-      - name: Endor Labs main-branch scan (SCA + container)
+      - name: Endor Labs main-branch scan (SCA + container + secrets)
         if: github.event_name == 'push'
         uses: endorlabs/github-action@v1
         with:
           namespace: ${{ env.ENDOR_NAMESPACE }}
+
           scan_dependencies: true
+          scan_secrets: true
+
           scan_container: true
           image: sbkottisa-java-app:${{ github.sha }}
-          project_name: sbkottisa-java-app
+          # no project_name
+
           pr: false
           scan_summary_output_type: 'table'
