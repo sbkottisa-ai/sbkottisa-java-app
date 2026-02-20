@@ -1,0 +1,140 @@
+name: Build, Scan, and Push
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Job: Build
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      id-token: write 
+      issues: write
+      pull-requests: write 
+
+    
+    steps:
+    # Build: Step 1 
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    # Build: Step 2  
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'microsoft'
+        java-version: '17'
+        
+    # Build: Step 3
+    - name: Install Dependencies
+      run: mvn clean install 
+
+    # Build: Step 4
+    # Endor Scan - Differential Scan on Pull Requests  
+    - name: Endor Scan - PR Checks
+      if: github.event_name == 'pull_request'
+      uses: endorlabs/github-action@v1.1.8
+      env:
+        ENDOR_SCAN_SEMGREP_PROGRAM: opengrep
+      with:
+        namespace: 'kriti-learn' 
+        scan_dependencies: true
+        scan_secrets: true
+        scan_sast: true
+        pr: true
+        enable_pr_comments: true
+        github_token: ${{ secrets.GITHUB_TOKEN }} # Required for PR comments on new policy violations
+  
+
+    # Build: Step 5
+    # Endor Scan Main Branch For:
+    # Dependencies
+    # Secrets
+    # Tools
+    - name: Endor Scan - Dependencies, Secrets, And Tools
+      uses: endorlabs/github-action@main
+      env:
+        ENDOR_SCAN_SEMGREP_PROGRAM: opengrep
+      with: 
+        namespace: 'kriti-learn' 
+        scan_dependencies: true
+        scan_secrets: true
+        scan_sast: true
+        pr: false
+        tools: true # turn false for no CI/CD tool discovery
+        scan_summary_output_type: 'table'
+
+    # Build: Step 6
+    - name: Build a package
+      run: mvn -B package 
+
+    # Build: Step 7
+    - name: Temporarily save jar artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jar-artifact
+        path: ${{ github.workspace }}/target/endor-java-webapp-demo.jar
+        retention-days: 1
+
+  # Job: Deploy
+  deploy:
+    permissions:
+        id-token: write
+        contents: read
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+   # Deploy: Step 1
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    # Deploy: Step 2
+    - name: Download Jar
+      uses: actions/download-artifact@v4
+      with:
+          name: jar-artifact
+          path: target/
+    
+    # Deploy: Step 3
+    - name: Docker build
+      run: |
+        docker build . -t kdogra479/endor-java-webapp-demo:latest
+
+    # Deploy: Step 4
+    - name: Endor Container Scan
+      uses: endorlabs/github-action@main
+      with:
+        namespace: 'kriti-learn'
+        scan_dependencies: false
+        scan_container: true
+        image: kdogra479/endor-java-webapp-demo:latest
+        pr: false
+    
+    # Deploy: Step 5
+    - name: Get Image Digest
+      run: |
+        IMAGE_SHA=$(docker inspect kdogra479/endor-java-webapp-demo:latest | jq -r '.[].Id')
+        SIGNING_TARGET="kdogra479/endor-java-webapp-demo@$IMAGE_SHA"
+        echo ARTIFACT="$SIGNING_TARGET" >> $GITHUB_ENV
+
+    # Deploy: Step 6
+    - name: Sign with Endor Labs
+      uses: endorlabs/github-action/sign@v1.1.3
+      with:
+        namespace: "kriti-learn"
+        artifact_name: ${{ env.ARTIFACT }}
+
+    # Deploy: Step 7
+    - name: Login to DockerHub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_TOKEN }}
+
+    # Deploy: Step 7
+    - name: Docker push
+      run: |
+        docker push kdogra479/endor-java-webapp-demo:latest

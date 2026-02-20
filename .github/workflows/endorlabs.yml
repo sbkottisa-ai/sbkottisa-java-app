@@ -1,0 +1,81 @@
+name: Endor Labs 
+on:
+  workflow_dispatch:
+  
+jobs:
+  # Job 1: San on PR
+  scan-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # Used to upload Sarif artifact to GitHub
+      contents: read # Used to check out a private repository
+      actions: read # Required for private repositories to upload Sarif files. GitHub Advanced Security licenses are required.
+      id-token: write # Used for keyless authentication with Endor Labs
+      issues: write # Required to automatically comment on PRs for new policy violations
+      pull-requests: write # Required to automatically comment on PRs for new policy violations
+    
+    # Checkout repo and build
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'microsoft'
+        java-version: '17'
+    - name: Build Package
+      run: mvn clean install
+
+    # Check PR and add PR comments
+    - name: Endor Labs Scan Pull Request
+      if: github.event_name == 'pull_request'
+      uses: endorlabs/github-action@v1.1.1
+      with:
+        namespace: 'kriti-learn' 
+        scan_dependencies: true
+        scan_secrets: true
+        pr: true
+        enable_pr_comments: true
+        github_token: ${{ secrets.GITHUB_TOKEN }} # Required for PR comments on new policy violations
+  
+  # Job 2: scan-main
+  scan-main:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      repository-projects: read
+      pull-requests: read
+      contents: read
+      security-events: write
+    
+    name: endorctl-scan
+    steps:
+    - uses: actions/checkout@v3
+    - name: 'Endor Labs Scan Push to main'
+      if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+      uses: endorlabs/github-action@main
+      with:
+        namespace: 'kriti-learn' 
+        scan_dependencies: true
+        scan_secrets: true
+        pr: false
+        scan_summary_output_type: 'table'
+        sarif_file: 'findings.sarif'
+        additional_args: --as-default-branch 
+    
+    - name: 'Setup API'
+      uses: endorlabs/github-action/setup@main
+      with: 
+        namespace: 'kriti-learn'
+        enable_github_action_token: true
+        
+    - name: 'Tag project'
+      run: |
+        endorctl api update -r Project --name ${{ github.server_url }}/${{ github.repository }}.git --data "{ \"meta\": {\"tags\": [ \"CrownJewel\" ] }}" --field-mask 'meta.tags'
+           
+    - name: 'Upload SARIF to Github'
+      if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'findings.sarif'    
+    

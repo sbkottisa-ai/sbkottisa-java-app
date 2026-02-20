@@ -1,0 +1,52 @@
+name: New Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scan-main:
+    permissions:
+      security-events: write # Used to upload Sarif artifact to GitHub
+      contents: read # Used to check out a private repository
+      actions: read # Required for private repositories to upload Sarif files. GitHub Advanced Security licenses are required.
+      id-token: write # Used for keyless authentication with Endor Labs
+      issues: write # Required to automatically comment on PRs for new policy violations
+      pull-requests: write # Required to automatically comment on PRs for new policy violations
+      repository-projects: read
+    name: endorctl-scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+    - name: Setup Java
+      run: |
+        curl https://mise.run | sh
+        /home/runner/.local/bin/mise install java@17.0.1
+        /home/runner/.local/bin/mise install maven
+        /home/runner/.local/bin/mise use -g maven
+        # Make mise shims visible to later steps
+        echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+
+    - name: Verify tools (optional but helpful)
+      run: |
+        which mvn
+        mvn -v
+        java -version
+    
+    - name: Add build settings
+      run: mvn clean install 
+
+    - name: 'Endor Labs Scan Push to main'
+      if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+      uses: endorlabs/github-action@main
+      env:
+        ENDOR_SCAN_SEMGREP_PROGRAM: opengrep
+      with:
+        namespace: 'kriti-learn.cx-test'
+        scan_dependencies: true
+        scan_secrets: true
+        scan_sast: true
+        pr: false
+        scan_summary_output_type: 'table'
+
+ 
