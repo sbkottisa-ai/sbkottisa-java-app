@@ -88,7 +88,8 @@ jobs:
         uses: endorlabs/github-action@v1
         with:
           namespace: ${{ env.ENDOR_NAMESPACE }}
-
+          scan_dependencies: false
+          scan_secrets: false
           scan_container: true
           image: sbkottisa-java-app:${{ github.sha }}
           pr: false
