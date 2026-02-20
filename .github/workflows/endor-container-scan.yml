@@ -1,0 +1,69 @@
+name: Endor Labs SCA + Container Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    # Needed for keyless auth to Endor via GitHub OIDC
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write       # for PR comments (optional)
+      security-events: write     # only if you export SARIF to GHAS later
+
+    env:
+      ENDOR_NAMESPACE: "sai-learn"   # your Endor namespace
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'microsoft'
+          java-version: '17'
+
+      - name: Build Java app
+        run: mvn -B clean package
+
+      - name: Build container image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t sbkottisa-java-app:${IMAGE_TAG} .
+
+      # PR scans (policy / gating)
+      - name: Endor Labs PR scan (SCA + container)
+        if: github.event_name == 'pull_request'
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ env.ENDOR_NAMESPACE }}
+          # SCA
+          scan_dependencies: true
+          # Container
+          scan_container: true
+          image: sbkottisa-java-app:${{ github.sha }}
+          project_name: sbkottisa-java-app
+          # PR behaviour
+          pr: true
+          enable_pr_comments: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Main-branch monitoring scan (shows up on dashboards)
+      - name: Endor Labs main-branch scan (SCA + container)
+        if: github.event_name == 'push'
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ env.ENDOR_NAMESPACE }}
+          scan_dependencies: true
+          scan_container: true
+          image: sbkottisa-java-app:${{ github.sha }}
+          project_name: sbkottisa-java-app
+          pr: false
+          scan_summary_output_type: 'table'
